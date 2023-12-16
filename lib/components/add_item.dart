@@ -1,15 +1,16 @@
-// ignore_for_file: override_on_non_overriding_member
+// ignore_for_file: library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
+import 'item_view.dart';
 
-class TodoForm extends StatefulWidget {
-  const TodoForm({Key? key}) : super(key: key);
+class AddItem extends StatefulWidget {
+  const AddItem({Key? key}) : super(key: key);
 
   @override
-  _TodoFormState createState() => _TodoFormState();
+  _AddItemState createState() => _AddItemState();
 }
 
-class _TodoFormState extends State<TodoForm> {
+class _AddItemState extends State<AddItem> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final List<TextEditingController> _stepControllers = [];
@@ -26,8 +27,15 @@ class _TodoFormState extends State<TodoForm> {
     });
   }
 
-  Future<void> _submitForm() async {
+  Future<void> _submitForm(BuildContext context) async {
     // Implement your form submission logic here
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ItemView(),
+      ),
+    );
   }
 
   @override
@@ -76,6 +84,7 @@ class _TodoFormState extends State<TodoForm> {
                                 controller: controller,
                                 decoration: InputDecoration(
                                   labelText: 'Step ${index + 1}',
+                                  // ignore: prefer_const_constructors
                                   icon: Icon(Icons.directions_walk),
                                 ),
                               ),
@@ -96,7 +105,9 @@ class _TodoFormState extends State<TodoForm> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: _submitForm,
+                    onPressed: () {
+                      _submitForm(context);
+                    },
                     child: const Text('Save'),
                   ),
                 ],
@@ -110,7 +121,6 @@ class _TodoFormState extends State<TodoForm> {
 }
 
 class MyCustomScrollBehavior extends ScrollBehavior {
-  @override
   Widget buildViewportChrome(
     BuildContext context,
     Widget child,
