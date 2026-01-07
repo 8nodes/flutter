@@ -1,12 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'add_item.dart';
+
+const String baseUrl = 'http://localhost:3000';
 
 class Todo {
   final String id;
   final String title;
   final String description;
-  final List<Step> steps;
+  final List<TodoStep> steps;
 
   Todo({
     required this.id,
@@ -14,19 +17,39 @@ class Todo {
     required this.description,
     required this.steps,
   });
+
+  factory Todo.fromJson(Map<String, dynamic> json) {
+    return Todo(
+      id: json['_id'],
+      title: json['title'],
+      description: json['description'],
+      steps: (json['steps'] as List)
+          .map((s) => TodoStep.fromJson(s))
+          .toList(),
+    );
+  }
 }
 
-class Step {
+class TodoStep {
+  final String id;
   final String description;
   bool completed;
-  final String id;
 
-  Step({
+  TodoStep({
+    required this.id,
     required this.description,
     required this.completed,
-    required this.id,
   });
+
+  factory TodoStep.fromJson(Map<String, dynamic> json) {
+    return TodoStep(
+      id: json['_id'],
+      description: json['description'],
+      completed: json['completed'],
+    );
+  }
 }
+
 
 class ItemView extends StatefulWidget {
   const ItemView({Key? key}) : super(key: key);
@@ -36,47 +59,56 @@ class ItemView extends StatefulWidget {
 }
 
 class _ItemViewState extends State<ItemView> {
-  Future<List<Todo>>? todosFuture;
+  late Future<List<Todo>> _todosFuture;
 
   @override
   void initState() {
     super.initState();
-    todosFuture = fetchTodos();
+    _loadTodos();
   }
 
+  void _loadTodos() {
+    _todosFuture = fetchTodos();
+  }
+
+  /// READ
   Future<List<Todo>> fetchTodos() async {
-    try {
-      final response = await http.get(Uri.parse('http://localhost:3000/todos'));
-      if (response.statusCode == 200) {
-        List<dynamic> data = json.decode(response.body);
-        List<Todo> fetchedTodos = data
-            .map((item) => Todo(
-                  id: item['_id'] as String,
-                  title: item['title'] as String,
-                  description: item['description'] as String,
-                  steps: (item['steps'] as List<dynamic>)
-                      .map((step) => Step(
-                            description: step['description'] as String,
-                            completed: step['completed'] as bool,
-                            id: step['_id'] as String,
-                          ))
-                      .toList(),
-                ))
-            .toList();
-        return fetchedTodos;
-      } else {
-        throw Exception('Failed to load todos');
-      }
-    } catch (error) {
-      print(error);
+    final response = await http.get(Uri.parse('$baseUrl/todos'));
+
+    if (response.statusCode != 200) {
       throw Exception('Failed to load todos');
     }
+
+    final List data = json.decode(response.body);
+    return data.map((e) => Todo.fromJson(e)).toList();
   }
 
-  void deleteTodo(String todoId) async {
-    setState(() {
-      todosFuture = fetchTodos();
-    });
+  /// DELETE
+  Future<void> deleteTodo(String id) async {
+    final response =
+        await http.delete(Uri.parse('$baseUrl/todos/$id'));
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete todo');
+    }
+
+    _loadTodos();
+    setState(() {});
+  }
+
+  /// UPDATE STEP COMPLETION
+  Future<void> toggleStep(
+    String todoId,
+    TodoStep step,
+  ) async {
+    step.completed = !step.completed;
+    setState(() {});
+
+    await http.patch(
+      Uri.parse('$baseUrl/todos/$todoId/steps/${step.id}'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'completed': step.completed}),
+    );
   }
 
   @override
@@ -85,110 +117,99 @@ class _ItemViewState extends State<ItemView> {
       home: Scaffold(
         appBar: AppBar(
           title: const Text('Todos'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddItem()),
+                );
+                _loadTodos();
+                setState(() {});
+              },
+            ),
+          ],
         ),
-        body: Container(
-          width: double.infinity,
-          margin: const EdgeInsets.all(20),
-          child: FutureBuilder(
-            future: todosFuture,
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: FutureBuilder<List<Todo>>(
+            future: _todosFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              } else {
-                List<Todo> todos = snapshot.data as List<Todo>;
-                return ListView.builder(
-                  itemCount: todos.length,
-                  itemBuilder: (context, index) {
-                    return Dismissible(
-                      key: Key(todos[index].id),
-                      background: Container(
-                        color: Colors.red,
-                        child: const Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: EdgeInsets.only(right: 16),
-                            child: Icon(
-                              Icons.delete,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                      onDismissed: (direction) {
-                        deleteTodo(todos[index].id);
-                      },
-                      child: Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Title: ${todos[index].title}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Description: ${todos[index].description}',
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Steps:',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              for (var step in todos[index].steps)
-                                ListTile(
-                                  title: Text(
-                                    step.description,
-                                    style: TextStyle(
-                                      decoration: step.completed
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
-                                  ),
-                                  leading: Checkbox(
-                                    value: step.completed,
-                                    onChanged: (bool? value) {
-                                      setState(() {
-                                        step.completed = value ?? false;
-                                      });
-                                    },
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
               }
+
+              if (snapshot.hasError) {
+                return Center(child: Text(snapshot.error.toString()));
+              }
+
+              final todos = snapshot.data!;
+              if (todos.isEmpty) {
+                return const Center(child: Text('No todos yet'));
+              }
+
+              return ListView.builder(
+                itemCount: todos.length,
+                itemBuilder: (context, index) {
+                  final todo = todos[index];
+
+                  return Dismissible(
+                    key: Key(todo.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (_) => deleteTodo(todo.id),
+                    child: Card(
+                      elevation: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              todo.title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(todo.description),
+                            const Divider(height: 24),
+                            const Text(
+                              'Steps',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            ...todo.steps.map(
+                              (step) => CheckboxListTile(
+                                value: step.completed,
+                                title: Text(
+                                  step.description,
+                                  style: TextStyle(
+                                    decoration: step.completed
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
+                                onChanged: (_) =>
+                                    toggleStep(todo.id, step),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
             },
           ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            setState(() {
-              todosFuture = fetchTodos();
-            });
-          },
-          tooltip: 'Reload',
-          child: const Icon(Icons.refresh),
         ),
       ),
     );
